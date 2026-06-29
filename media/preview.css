@@ -215,7 +215,7 @@ html, body {
 }
 
 #preview-content th {
-  background: #0e2a5c;
+  background: #0e2a5c !important;
   color: var(--md-heading);
   font-weight: 600;
   font-size: 0.9em;
