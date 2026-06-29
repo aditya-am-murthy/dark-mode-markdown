@@ -44,6 +44,11 @@
     root.style.setProperty('--md-accent', theme.accent);
     root.style.setProperty('--md-font', theme.fontFamily);
     root.style.setProperty('--md-font-size', theme.fontSize + 'px');
+    // Blue accent elements — set explicitly so webview base styles can't override
+    root.style.setProperty('--md-border', '#1a3a6b');
+    root.style.setProperty('--md-quote-border', '#1e4db7');
+    root.style.setProperty('--md-toolbar-border', '#1a3a6b');
+    root.style.setProperty('--md-code-bg', '#161b22');
     document.body.style.background = theme.background;
     currentTheme = theme;
   }
@@ -118,6 +123,9 @@
 
     previewEl.innerHTML = html;
 
+    // Force blue styling directly on elements — bypasses any webview base style overrides
+    applyBlueAccents();
+
     // Render mermaid diagrams
     if (mermaidBlocks.length > 0) {
       initMermaid(theme);
@@ -143,6 +151,38 @@
         el.innerHTML = `<pre style="color:#ff7b72;padding:1em">Mermaid error: ${escapeHtml(err.message)}</pre>`;
       }
     }
+  }
+
+  // ── Force blue accents directly onto rendered elements ────────
+  function applyBlueAccents() {
+    const BORDER = '1px solid #1a3a6b';
+    const TH_BG  = '#0e2a5c';
+
+    // Table: outer border + all cell borders
+    previewEl.querySelectorAll('table').forEach(el => {
+      el.style.border = BORDER;
+      el.style.borderCollapse = 'collapse';
+    });
+    previewEl.querySelectorAll('th, td').forEach(el => {
+      el.style.border = BORDER;
+    });
+    // Table headers: blue background
+    previewEl.querySelectorAll('th').forEach(el => {
+      el.style.background = TH_BG;
+    });
+    // HR dividers
+    previewEl.querySelectorAll('hr').forEach(el => {
+      el.style.border = 'none';
+      el.style.borderTop = '1px solid #1a3a6b';
+    });
+    // H1/H2 underline
+    previewEl.querySelectorAll('h1, h2').forEach(el => {
+      el.style.borderBottom = '1px solid #1a3a6b';
+    });
+    // Blockquote left bar
+    previewEl.querySelectorAll('blockquote').forEach(el => {
+      el.style.borderLeft = '4px solid #1e4db7';
+    });
   }
 
   // ── Basic syntax highlighting for code blocks ─────────────────
