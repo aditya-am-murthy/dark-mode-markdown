@@ -9,13 +9,13 @@
   --md-accent: #58a6ff;
   --md-font: 'Segoe UI', system-ui, sans-serif;
   --md-font-size: 16px;
-  --md-code-bg: #0a1628;
+  --md-code-bg: #161b22;
   --md-code-fg: #e6edf3;
   --md-border: #1a3a6b;
   --md-heading: #e6edf3;
   --md-muted: #8b949e;
   --md-quote-border: #1e4db7;
-  --md-toolbar-bg: #0d1521;
+  --md-toolbar-bg: #161b22;
   --md-toolbar-border: #1a3a6b;
   --md-btn-hover: #1f2937;
   --md-row-alt: rgba(22, 27, 34, 0.6);
@@ -215,7 +215,7 @@ html, body {
 }
 
 #preview-content th {
-  background: var(--md-code-bg);
+  background: #0e2a5c;
   color: var(--md-heading);
   font-weight: 600;
   font-size: 0.9em;
