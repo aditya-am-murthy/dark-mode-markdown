@@ -1,0 +1,97 @@
+{
+  "name": "dark-mode-markdown",
+  "displayName": "Dark Mode Markdown Preview",
+  "description": "Live markdown preview with dark theme, Mermaid diagrams, and PDF export",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onLanguage:markdown"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "darkMarkdown.openPreview",
+        "title": "Dark Markdown: Open Preview",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "darkMarkdown.openSideBySide",
+        "title": "Dark Markdown: Open Side by Side Preview",
+        "icon": "$(split-horizontal)"
+      },
+      {
+        "command": "darkMarkdown.exportPdf",
+        "title": "Dark Markdown: Export to PDF",
+        "icon": "$(export)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "darkMarkdown.openPreview",
+          "when": "editorLangId == markdown",
+          "group": "navigation"
+        },
+        {
+          "command": "darkMarkdown.openSideBySide",
+          "when": "editorLangId == markdown",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Dark Markdown Preview",
+      "properties": {
+        "darkMarkdown.theme.background": {
+          "type": "string",
+          "default": "#0d1117",
+          "description": "Preview background color"
+        },
+        "darkMarkdown.theme.foreground": {
+          "type": "string",
+          "default": "#c9d1d9",
+          "description": "Preview text color"
+        },
+        "darkMarkdown.theme.accent": {
+          "type": "string",
+          "default": "#58a6ff",
+          "description": "Accent/link color"
+        },
+        "darkMarkdown.theme.fontFamily": {
+          "type": "string",
+          "default": "'Segoe UI', system-ui, sans-serif",
+          "description": "Body font family"
+        },
+        "darkMarkdown.theme.fontSize": {
+          "type": "number",
+          "default": 16,
+          "description": "Body font size in pixels"
+        },
+        "darkMarkdown.sideBySideByDefault": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open preview in side-by-side mode by default"
+        },
+        "darkMarkdown.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh preview on file changes"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  }
+}

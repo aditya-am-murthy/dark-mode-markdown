@@ -1,0 +1,335 @@
+/* Dark Mode Markdown Preview — preview.css
+   Theme variables are injected dynamically via JS from VS Code settings.
+   Defaults here mirror the extension defaults.
+*/
+
+:root {
+  --md-bg: #0d1117;
+  --md-fg: #c9d1d9;
+  --md-accent: #58a6ff;
+  --md-font: 'Segoe UI', system-ui, sans-serif;
+  --md-font-size: 16px;
+  --md-code-bg: #161b22;
+  --md-code-fg: #e6edf3;
+  --md-border: #30363d;
+  --md-heading: #e6edf3;
+  --md-muted: #8b949e;
+  --md-quote-border: #3d444d;
+  --md-toolbar-bg: #161b22;
+  --md-toolbar-border: #30363d;
+  --md-btn-hover: #1f2937;
+  --md-row-alt: rgba(22, 27, 34, 0.6);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  background: var(--md-bg);
+  color: var(--md-fg);
+  font-family: var(--md-font);
+  font-size: var(--md-font-size);
+  line-height: 1.7;
+}
+
+/* ── Toolbar ────────────────────────────────────────────────── */
+#toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--md-toolbar-bg);
+  border-bottom: 1px solid var(--md-toolbar-border);
+  backdrop-filter: blur(8px);
+}
+
+#toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--md-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--md-fg);
+  font-family: var(--md-font);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+#toolbar button:hover {
+  background: var(--md-btn-hover);
+  border-color: var(--md-accent);
+  color: var(--md-accent);
+}
+
+#toolbar button svg {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+#toolbar button.active {
+  background: var(--md-btn-hover);
+  border-color: var(--md-accent);
+  color: var(--md-accent);
+}
+
+/* ── Main content area ──────────────────────────────────────── */
+#preview-content {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 40px 48px 80px;
+}
+
+/* ── Headings ───────────────────────────────────────────────── */
+#preview-content h1,
+#preview-content h2,
+#preview-content h3,
+#preview-content h4,
+#preview-content h5,
+#preview-content h6 {
+  color: var(--md-heading);
+  margin: 1.5em 0 0.5em;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+#preview-content h1 {
+  font-size: 2em;
+  border-bottom: 1px solid var(--md-border);
+  padding-bottom: 0.3em;
+}
+
+#preview-content h2 {
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--md-border);
+  padding-bottom: 0.3em;
+}
+
+#preview-content h3 { font-size: 1.25em; }
+#preview-content h4 { font-size: 1.05em; }
+#preview-content h5 { font-size: 0.95em; color: var(--md-muted); }
+#preview-content h6 { font-size: 0.875em; color: var(--md-muted); }
+
+/* ── Paragraphs & inline ────────────────────────────────────── */
+#preview-content p {
+  margin: 0.75em 0;
+}
+
+#preview-content strong {
+  color: var(--md-heading);
+  font-weight: 600;
+}
+
+#preview-content em {
+  color: var(--md-fg);
+  font-style: italic;
+}
+
+#preview-content del {
+  color: var(--md-muted);
+  text-decoration: line-through;
+}
+
+/* ── Links ──────────────────────────────────────────────────── */
+#preview-content a {
+  color: var(--md-accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+
+#preview-content a:hover {
+  border-bottom-color: var(--md-accent);
+}
+
+/* ── Code ───────────────────────────────────────────────────── */
+#preview-content code {
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.875em;
+  background: var(--md-code-bg);
+  color: var(--md-code-fg);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  border: 1px solid var(--md-border);
+}
+
+#preview-content pre {
+  background: var(--md-code-bg);
+  border: 1px solid var(--md-border);
+  border-radius: 8px;
+  padding: 1.2em 1.4em;
+  overflow-x: auto;
+  margin: 1em 0;
+  line-height: 1.6;
+  position: relative;
+}
+
+#preview-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.9em;
+  color: var(--md-code-fg);
+}
+
+/* ── Blockquotes ────────────────────────────────────────────── */
+#preview-content blockquote {
+  border-left: 4px solid var(--md-quote-border);
+  margin: 1em 0;
+  padding: 0.5em 1.2em;
+  color: var(--md-muted);
+  background: rgba(22, 27, 34, 0.4);
+  border-radius: 0 6px 6px 0;
+}
+
+#preview-content blockquote p {
+  margin: 0.25em 0;
+}
+
+/* ── Tables ─────────────────────────────────────────────────── */
+#preview-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  font-size: 0.95em;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--md-border);
+}
+
+#preview-content th,
+#preview-content td {
+  border: 1px solid var(--md-border);
+  padding: 0.6em 1em;
+  text-align: left;
+}
+
+#preview-content th {
+  background: var(--md-code-bg);
+  color: var(--md-heading);
+  font-weight: 600;
+  font-size: 0.9em;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+#preview-content tr:nth-child(even) td {
+  background: var(--md-row-alt);
+}
+
+#preview-content tr:hover td {
+  background: rgba(88, 166, 255, 0.05);
+}
+
+/* ── Lists ──────────────────────────────────────────────────── */
+#preview-content ul,
+#preview-content ol {
+  margin: 0.75em 0 0.75em 1.5em;
+}
+
+#preview-content li {
+  margin: 0.3em 0;
+}
+
+#preview-content li > ul,
+#preview-content li > ol {
+  margin: 0.25em 0 0.25em 1.5em;
+}
+
+/* ── Task lists ─────────────────────────────────────────────── */
+#preview-content input[type="checkbox"] {
+  accent-color: var(--md-accent);
+  margin-right: 0.4em;
+}
+
+/* ── Horizontal rules ───────────────────────────────────────── */
+#preview-content hr {
+  border: none;
+  border-top: 1px solid var(--md-border);
+  margin: 2em 0;
+}
+
+/* ── Images ─────────────────────────────────────────────────── */
+#preview-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--md-border);
+}
+
+/* ── Mermaid diagrams ───────────────────────────────────────── */
+#preview-content .mermaid {
+  text-align: center;
+  margin: 1.5em 0;
+  background: var(--md-code-bg);
+  border: 1px solid var(--md-border);
+  border-radius: 8px;
+  padding: 1em;
+  overflow-x: auto;
+}
+
+#preview-content .mermaid svg {
+  max-width: 100%;
+}
+
+/* ── Scrollbar styling ──────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--md-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--md-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-muted);
+}
+
+/* ── Syntax highlighting (basic token colors via highlight.js if present) ── */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in { color: #ff7b72; }
+.hljs-string,
+.hljs-attr { color: #a5d6ff; }
+.hljs-number,
+.hljs-literal { color: #79c0ff; }
+.hljs-comment { color: #8b949e; font-style: italic; }
+.hljs-function,
+.hljs-name { color: #d2a8ff; }
+.hljs-variable { color: #ffa657; }
+.hljs-type { color: #f0883e; }
+.hljs-title { color: #d2a8ff; }
+.hljs-class { color: #ffa657; }
+.hljs-meta { color: #79c0ff; }
+.hljs-tag { color: #7ee787; }
+
+/* ── Print styles ───────────────────────────────────────────── */
+@media print {
+  #toolbar { display: none !important; }
+  body {
+    background: var(--md-bg) !important;
+    color: var(--md-fg) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  #preview-content {
+    max-width: 100%;
+    padding: 0;
+  }
+}
