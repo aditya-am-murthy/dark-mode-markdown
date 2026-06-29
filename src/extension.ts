@@ -31,14 +31,21 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // Auto-open preview if sideBySideByDefault is set and a markdown file is already open
-  const config = vscode.workspace.getConfiguration('darkMarkdown');
-  if (config.get<boolean>('sideBySideByDefault')) {
-    const editor = vscode.window.activeTextEditor;
+  // Auto-open preview whenever a markdown file becomes active
+  const autoOpen = (editor: vscode.TextEditor | undefined) => {
     if (editor && editor.document.languageId === 'markdown') {
-      PreviewPanel.createOrShow(context, editor.document, true);
+      const config = vscode.workspace.getConfiguration('darkMarkdown');
+      const sideBySide = config.get<boolean>('sideBySideByDefault') ?? false;
+      PreviewPanel.createOrShow(context, editor.document, sideBySide);
     }
-  }
+  };
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(autoOpen)
+  );
+
+  // Trigger for any markdown file already open on activation
+  autoOpen(vscode.window.activeTextEditor);
 }
 
 export function deactivate(): void {
