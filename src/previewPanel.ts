@@ -136,7 +136,7 @@ export class PreviewPanel {
       fontFamily: config.get<string>('theme.fontFamily', "'Segoe UI', system-ui, sans-serif"),
       fontSize: config.get<number>('theme.fontSize', 16)
     };
-    const fileType = this.document.languageId === 'csv' ? 'csv' : 'markdown';
+    const fileType = (this.document.languageId === 'csv' || this.document.fileName.endsWith('.csv')) ? 'csv' : 'markdown';
     this.panel.webview.postMessage({ type: 'update', markdown, theme, sideBySide: this.sideBySide, fileType });
   }
 

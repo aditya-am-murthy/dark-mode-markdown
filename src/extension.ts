@@ -5,7 +5,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('darkMarkdown.openPreview', () => {
       const editor = vscode.window.activeTextEditor;
-      if (!editor || !isSupportedLang(editor.document.languageId)) {
+      if (!editor || !isSupportedDoc(editor.document)) {
         vscode.window.showWarningMessage('Open a Markdown or CSV file first.');
         return;
       }
@@ -14,7 +14,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('darkMarkdown.openSideBySide', () => {
       const editor = vscode.window.activeTextEditor;
-      if (!editor || !isSupportedLang(editor.document.languageId)) {
+      if (!editor || !isSupportedDoc(editor.document)) {
         vscode.window.showWarningMessage('Open a Markdown or CSV file first.');
         return;
       }
@@ -23,7 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('darkMarkdown.exportPdf', () => {
       const editor = vscode.window.activeTextEditor;
-      if (!editor || !isSupportedLang(editor.document.languageId)) {
+      if (!editor || !isSupportedDoc(editor.document)) {
         vscode.window.showWarningMessage('Open a Markdown or CSV file first.');
         return;
       }
@@ -33,7 +33,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Auto-open preview whenever a markdown or CSV file becomes active
   const autoOpen = (editor: vscode.TextEditor | undefined) => {
-    if (editor && isSupportedLang(editor.document.languageId)) {
+    if (editor && isSupportedDoc(editor.document)) {
       const config = vscode.workspace.getConfiguration('darkMarkdown');
       const sideBySide = config.get<boolean>('sideBySideByDefault') ?? false;
       PreviewPanel.createOrShow(context, editor.document, sideBySide);
@@ -50,6 +50,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
 function isSupportedLang(langId: string): boolean {
   return langId === 'markdown' || langId === 'csv';
+}
+
+function isSupportedDoc(doc: vscode.TextDocument): boolean {
+  return isSupportedLang(doc.languageId) || doc.fileName.endsWith('.csv');
+}
+
+function isCsvDoc(doc: vscode.TextDocument): boolean {
+  return doc.languageId === 'csv' || doc.fileName.endsWith('.csv');
 }
 
 export function deactivate(): void {
