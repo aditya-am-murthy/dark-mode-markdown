@@ -7,13 +7,14 @@
   "name": "dark-mode-markdown",
   "displayName": "Dark Mode Markdown Preview",
   "description": "Live markdown preview with dark theme, Mermaid diagrams, and PDF export",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": ["Other"],
   "activationEvents": [
-    "onLanguage:markdown"
+    "onLanguage:markdown",
+    "onLanguage:csv"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -38,12 +39,12 @@
       "editor/title": [
         {
           "command": "darkMarkdown.openPreview",
-          "when": "editorLangId == markdown",
+          "when": "editorLangId == markdown || editorLangId == csv",
           "group": "navigation"
         },
         {
           "command": "darkMarkdown.openSideBySide",
-          "when": "editorLangId == markdown",
+          "when": "editorLangId == markdown || editorLangId == csv",
           "group": "navigation"
         }
       ]

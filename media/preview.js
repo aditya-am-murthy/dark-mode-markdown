@@ -225,6 +225,53 @@
       .replace(/'/g, '&#39;');
   }
 
+  // ── CSV rendering ─────────────────────────────────────────────
+  function parsecsv(text) {
+    const rows = [];
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      if (line.trim() === '') continue;
+      const cells = [];
+      let cur = '', inQuote = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuote && line[i + 1] === '"') { cur += '"'; i++; }
+          else { inQuote = !inQuote; }
+        } else if (ch === ',' && !inQuote) {
+          cells.push(cur); cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      cells.push(cur);
+      rows.push(cells);
+    }
+    return rows;
+  }
+
+  function renderCsv(text) {
+    const rows = parsecsv(text);
+    if (rows.length === 0) { previewEl.innerHTML = '<p style="color:#8b949e">Empty CSV</p>'; return; }
+
+    const headers = rows[0];
+    const body = rows.slice(1);
+
+    let html = '<div style="overflow-x:auto"><table><thead><tr>';
+    headers.forEach(h => { html += `<th>${escapeHtml(h.trim())}</th>`; });
+    html += '</tr></thead><tbody>';
+    body.forEach(row => {
+      html += '<tr>';
+      headers.forEach((_, i) => { html += `<td>${escapeHtml((row[i] || '').trim())}</td>`; });
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    html += `<p style="color:#8b949e;font-size:0.85em;margin-top:1em">${body.length} row${body.length !== 1 ? 's' : ''} × ${headers.length} column${headers.length !== 1 ? 's' : ''}</p>`;
+
+    previewEl.innerHTML = html;
+    applyBlueAccents();
+  }
+
   // ── Message handler from extension host ──────────────────────
   window.addEventListener('message', (event) => {
     const msg = event.data;
@@ -232,12 +279,16 @@
 
     switch (msg.type) {
       case 'update': {
-        const { markdown, theme, sideBySide } = msg;
+        const { markdown, theme, sideBySide, fileType } = msg;
         applyTheme(theme);
         lastMarkdown = markdown;
         sideBySideActive = sideBySide || false;
         btnSideBySide.classList.toggle('active', sideBySideActive);
-        renderMarkdown(markdown, theme);
+        if (fileType === 'csv') {
+          renderCsv(markdown);
+        } else {
+          renderMarkdown(markdown, theme);
+        }
         break;
       }
     }

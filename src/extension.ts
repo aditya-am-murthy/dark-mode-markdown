@@ -5,8 +5,8 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('darkMarkdown.openPreview', () => {
       const editor = vscode.window.activeTextEditor;
-      if (!editor || editor.document.languageId !== 'markdown') {
-        vscode.window.showWarningMessage('Open a Markdown file first.');
+      if (!editor || !isSupportedLang(editor.document.languageId)) {
+        vscode.window.showWarningMessage('Open a Markdown or CSV file first.');
         return;
       }
       PreviewPanel.createOrShow(context, editor.document, false);
@@ -14,8 +14,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('darkMarkdown.openSideBySide', () => {
       const editor = vscode.window.activeTextEditor;
-      if (!editor || editor.document.languageId !== 'markdown') {
-        vscode.window.showWarningMessage('Open a Markdown file first.');
+      if (!editor || !isSupportedLang(editor.document.languageId)) {
+        vscode.window.showWarningMessage('Open a Markdown or CSV file first.');
         return;
       }
       PreviewPanel.createOrShow(context, editor.document, true);
@@ -23,17 +23,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('darkMarkdown.exportPdf', () => {
       const editor = vscode.window.activeTextEditor;
-      if (!editor || editor.document.languageId !== 'markdown') {
-        vscode.window.showWarningMessage('Open a Markdown file first.');
+      if (!editor || !isSupportedLang(editor.document.languageId)) {
+        vscode.window.showWarningMessage('Open a Markdown or CSV file first.');
         return;
       }
       PreviewPanel.exportPdf(context, editor.document);
     })
   );
 
-  // Auto-open preview whenever a markdown file becomes active
+  // Auto-open preview whenever a markdown or CSV file becomes active
   const autoOpen = (editor: vscode.TextEditor | undefined) => {
-    if (editor && editor.document.languageId === 'markdown') {
+    if (editor && isSupportedLang(editor.document.languageId)) {
       const config = vscode.workspace.getConfiguration('darkMarkdown');
       const sideBySide = config.get<boolean>('sideBySideByDefault') ?? false;
       PreviewPanel.createOrShow(context, editor.document, sideBySide);
@@ -46,6 +46,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Trigger for any markdown file already open on activation
   autoOpen(vscode.window.activeTextEditor);
+}
+
+function isSupportedLang(langId: string): boolean {
+  return langId === 'markdown' || langId === 'csv';
 }
 
 export function deactivate(): void {
