@@ -95,6 +95,12 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically refresh preview on file changes"
+        },
+        "darkMarkdown.exportMode": {
+          "type": "string",
+          "enum": ["ask", "dark", "light"],
+          "default": "ask",
+          "description": "PDF export color mode. 'ask' prompts each time; 'dark' uses the fully dark black theme; 'light' uses a white print-friendly theme."
         }
       }
     }

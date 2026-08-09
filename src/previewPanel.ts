@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { PdfExporter } from './pdfExporter';
 
 export class PreviewPanel {
@@ -117,7 +116,11 @@ export class PreviewPanel {
     if (!panel) {
       panel = PreviewPanel.createOrShow(context, document, false);
     }
-    await PdfExporter.export(panel.panel.webview, document, context);
+    const mode = await PdfExporter.pickMode();
+    if (!mode) {
+      return;
+    }
+    await PdfExporter.export(panel.panel.webview, document, context, mode);
   }
 
   static disposeAll(): void {
@@ -140,7 +143,7 @@ export class PreviewPanel {
     this.panel.webview.postMessage({ type: 'update', markdown, theme, sideBySide: this.sideBySide, fileType });
   }
 
-  private handleMessage(msg: { type: string; html?: string }): void {
+  private async handleMessage(msg: { type: string; html?: string }): Promise<void> {
     switch (msg.type) {
       case 'toggleSideBySide':
         this.sideBySide = !this.sideBySide;
@@ -148,9 +151,14 @@ export class PreviewPanel {
           vscode.window.showTextDocument(this.document, vscode.ViewColumn.One, false);
         }
         break;
-      case 'exportPdf':
-        PdfExporter.export(this.panel.webview, this.document, this.context);
+      case 'exportPdf': {
+        const mode = await PdfExporter.pickMode();
+        if (!mode) {
+          break;
+        }
+        await PdfExporter.export(this.panel.webview, this.document, this.context, mode);
         break;
+      }
       case 'copyHtml':
         if (msg.html) {
           vscode.env.clipboard.writeText(msg.html);
@@ -200,7 +208,7 @@ export class PreviewPanel {
       </svg>
       Side by Side
     </button>
-    <button id="btn-export" title="Export to PDF">
+    <button id="btn-export" title="Export to PDF (dark or light)">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
         <path d="M4 1h5l4 4v10H4V1zm5 0v4h4M7 9l-2 2 2 2M9 9l2 2-2 2M8 7v8"/>
       </svg>
