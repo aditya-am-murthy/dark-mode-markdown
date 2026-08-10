@@ -384,14 +384,17 @@
       await rasterizeSvgs(previewEl);
       await new Promise((r) => setTimeout(r, 250));
 
-      // Clone into a fixed-width capture root so page width is consistent
+      // Fixed-position capture root sized for A4 printable width (avoids left clip)
       const capture = document.createElement('div');
-      capture.style.width = '800px';
-      capture.style.maxWidth = '800px';
-      capture.style.padding = '24px';
+      capture.className = 'pdf-capture';
+      capture.style.position = 'fixed';
+      capture.style.left = '0';
+      capture.style.top = '0';
+      capture.style.zIndex = '2147483646';
+      capture.style.width = '680px';
+      capture.style.maxWidth = '680px';
       capture.style.background = theme.background;
       capture.style.color = theme.foreground;
-      capture.style.boxSizing = 'border-box';
       capture.innerHTML = previewEl.innerHTML;
       capture.querySelectorAll('img, table, .mermaid').forEach((el) => {
         el.style.maxWidth = '100%';
@@ -399,15 +402,20 @@
       });
       document.body.appendChild(capture);
 
+      // A4 ≈ 210mm; 14mm side margins → ~182mm content. 680px maps cleanly into that.
       const opt = {
-        margin: [10, 10, 10, 10],
+        margin: [14, 14, 14, 14],
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: {
           scale: 2,
           useCORS: true,
           allowTaint: true,
           backgroundColor: theme.background,
-          windowWidth: 800
+          windowWidth: 680,
+          scrollX: 0,
+          scrollY: 0,
+          x: 0,
+          y: 0
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'] }
