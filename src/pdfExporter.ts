@@ -71,8 +71,8 @@ const LIGHT_THEME: Omit<ExportTheme, 'fontFamily' | 'fontSize'> = {
 
 export class PdfExporter {
   /**
-   * Export via an in-editor webview print dialog.
-   * On any failure, writes a .pdf next to the source file.
+   * Always writes a .pdf next to the source document (works on Remote SSH).
+   * Also opens a styled preview panel; print is optional (often blocked in webviews).
    */
   static async export(
     _webview: vscode.Webview,
@@ -88,15 +88,26 @@ export class PdfExporter {
     const content = document.getText();
     const isCsv =
       document.languageId === 'csv' || document.fileName.toLowerCase().endsWith('.csv');
-    const baseName = path.basename(document.fileName).replace(/\.[^.]+$/, '');
+    const baseName = path.basename(document.fileName).replace(/\.[^.]+$/, '') || 'export';
 
+    // Primary path: always save PDF beside the document (or via Save dialog).
+    let savedPath: string;
+    try {
+      savedPath = await PdfExporter.savePdfBesideDocument(document, content);
+    } catch (saveErr) {
+      const detail = saveErr instanceof Error ? saveErr.message : String(saveErr);
+      vscode.window.showErrorMessage(`Could not save PDF: ${detail}`);
+      return;
+    }
+
+    // Secondary: show styled preview (print may not work inside Cursor webviews).
     try {
       const config = vscode.workspace.getConfiguration('darkMarkdown');
       const theme = PdfExporter.resolveTheme(selectedMode, config);
 
       const panel = vscode.window.createWebviewPanel(
         'darkMarkdownExport',
-        `Export PDF (${selectedMode}): ${baseName}`,
+        `Export (${selectedMode}): ${baseName}`,
         vscode.ViewColumn.Beside,
         {
           enableScripts: true,
@@ -112,50 +123,60 @@ export class PdfExporter {
         baseName,
         isCsv,
         panel.webview,
-        nonce
+        nonce,
+        savedPath
       );
 
-      panel.webview.onDidReceiveMessage(async (msg: { type?: string; message?: string }) => {
-        if (msg?.type === 'exportError') {
+      panel.webview.onDidReceiveMessage(async (msg: { type?: string }) => {
+        if (msg?.type === 'savePdfAgain') {
           try {
-            await PdfExporter.saveFallbackPdf(document, content);
-          } catch (saveErr) {
-            const detail = saveErr instanceof Error ? saveErr.message : String(saveErr);
-            vscode.window.showErrorMessage(`Export failed and could not save PDF: ${detail}`);
+            const again = await PdfExporter.savePdfBesideDocument(document, content);
+            vscode.window.showInformationMessage(`Saved PDF: ${again}`);
+          } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            vscode.window.showErrorMessage(`Could not save PDF: ${detail}`);
           }
         }
       });
-
-      vscode.window.showInformationMessage(
-        `Export ready (${selectedMode}). Use Print → Save as PDF (or the Print button). If that fails, a PDF is saved beside the file.`
-      );
     } catch (err) {
+      // PDF already saved — preview is optional.
       const detail = err instanceof Error ? err.message : String(err);
-      try {
-        const saved = await PdfExporter.saveFallbackPdf(document, content);
-        vscode.window.showWarningMessage(
-          `Export UI failed (${detail}). Saved PDF instead: ${saved}`
-        );
-      } catch (saveErr) {
-        const saveDetail = saveErr instanceof Error ? saveErr.message : String(saveErr);
-        vscode.window.showErrorMessage(
-          `Export failed (${detail}) and PDF save failed (${saveDetail}).`
-        );
-      }
+      vscode.window.showWarningMessage(
+        `PDF saved to ${savedPath}, but preview panel failed: ${detail}`
+      );
     }
   }
 
-  /** Write a simple text PDF next to the source document (same basename, .pdf). */
-  static async saveFallbackPdf(
+  /** Write a PDF next to the source document (same basename, .pdf). */
+  static async savePdfBesideDocument(
     document: vscode.TextDocument,
     content: string
   ): Promise<string> {
-    const baseName = path.basename(document.fileName).replace(/\.[^.]+$/, '');
-    const pdfUri = vscode.Uri.joinPath(document.uri, '..', `${baseName}.pdf`);
+    const baseName =
+      path.basename(document.fileName).replace(/\.[^.]+$/, '') || 'export';
+
+    let pdfUri: vscode.Uri;
+    if (document.uri.scheme === 'untitled') {
+      const picked = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(`${baseName}.pdf`),
+        filters: { PDF: ['pdf'] },
+        saveLabel: 'Save PDF'
+      });
+      if (!picked) {
+        throw new Error('Save cancelled');
+      }
+      pdfUri = picked;
+    } else {
+      const dir = dirnameUri(document.uri);
+      pdfUri = vscode.Uri.joinPath(dir, `${baseName}.pdf`);
+    }
+
     const bytes = buildSimplePdf(content);
     await vscode.workspace.fs.writeFile(pdfUri, bytes);
-    vscode.window.showInformationMessage(`Saved PDF: ${pdfUri.fsPath}`);
-    return pdfUri.fsPath;
+
+    const label = pdfUri.scheme === 'file' ? pdfUri.fsPath : pdfUri.toString(true);
+    vscode.window.showInformationMessage(`Saved PDF: ${label}`);
+    return label;
   }
 
   static async pickMode(): Promise<ExportMode | undefined> {
@@ -219,12 +240,14 @@ export class PdfExporter {
     title: string,
     isCsv: boolean,
     webview: vscode.Webview,
-    nonce: string
+    nonce: string,
+    savedPath: string
   ): string {
     const escapedContent = content
       .replace(/\\/g, '\\\\')
       .replace(/`/g, '\\`')
       .replace(/\$/g, '\\$');
+    const escapedSavedPath = escapeHtml(savedPath);
 
     const t = theme;
     const csp = [
@@ -407,10 +430,11 @@ export class PdfExporter {
 </head>
 <body>
   <div id="export-bar">
-    <button class="primary" id="btn-print" type="button">Print / Save as PDF</button>
-    <span class="hint">Choose “Save as PDF” as the destination in the print dialog.</span>
+    <button class="primary" id="btn-save" type="button">Save PDF again</button>
+    <button id="btn-print" type="button">Try print dialog</button>
+    <span class="hint">PDF saved to: ${escapedSavedPath}</span>
   </div>
-  <div id="status">Preparing export…</div>
+  <div id="status">PDF saved beside the document.</div>
   <div id="preview-content"></div>
   <script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
@@ -422,15 +446,14 @@ export class PdfExporter {
       const statusEl = document.getElementById('status');
       const previewEl = document.getElementById('preview-content');
       const btnPrint = document.getElementById('btn-print');
+      const btnSave = document.getElementById('btn-save');
 
-      btnPrint.addEventListener('click', function() { window.print(); });
-
-      function reportError(err) {
-        const message = (err && err.message) ? err.message : String(err || 'Unknown export error');
-        statusEl.style.display = '';
-        statusEl.textContent = 'Export error — saving PDF beside source file…';
-        vscodeApi.postMessage({ type: 'exportError', message: message });
-      }
+      btnSave.addEventListener('click', function() {
+        vscodeApi.postMessage({ type: 'savePdfAgain' });
+      });
+      btnPrint.addEventListener('click', function() {
+        try { window.print(); } catch (e) { /* webviews often block print */ }
+      });
 
       function escapeHtml(str) {
         return String(str)
@@ -559,33 +582,22 @@ export class PdfExporter {
         }
       }
 
-      function triggerPrint() {
-        statusEl.textContent = 'Opening print dialog…';
-        setTimeout(function() {
-          statusEl.style.display = 'none';
-          window.print();
-        }, 400);
-      }
-
       async function run() {
         try {
           if (isCsv) {
             renderCsv(content);
           } else if (typeof marked === 'undefined') {
-            previewEl.innerHTML = '<p style="color:${t.errorColor}">Failed to load markdown renderer (CDN blocked?). Saving PDF beside the source file…</p>';
-            statusEl.textContent = 'Export failed — saving PDF…';
-            reportError(new Error('Failed to load markdown renderer (CDN blocked?)'));
+            previewEl.innerHTML = '<p style="color:${t.errorColor}">Preview renderer unavailable (CDN). PDF was still saved beside the document.</p>';
+            statusEl.textContent = 'PDF saved (preview unavailable)';
             return;
           } else {
             await renderMarkdown(content);
           }
-          statusEl.textContent = 'Ready — Print → Save as PDF';
-          triggerPrint();
+          statusEl.textContent = 'PDF saved beside the document';
         } catch (err) {
-          statusEl.textContent = 'Export failed — saving PDF…';
-          previewEl.innerHTML = '<p style="color:${t.errorColor}">Export error: ' +
-            escapeHtml(err.message || String(err)) + '</p>';
-          reportError(err);
+          statusEl.textContent = 'PDF saved (preview error)';
+          previewEl.innerHTML = '<p style="color:${t.errorColor}">Preview error: ' +
+            escapeHtml(err.message || String(err)) + ' — PDF was still saved.</p>';
         }
       }
 
@@ -607,6 +619,14 @@ function escapeHtml(str: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/** Parent directory of a document URI (safe for remote schemes). */
+function dirnameUri(uri: vscode.Uri): vscode.Uri {
+  const normalized = uri.path.replace(/\\/g, '/');
+  const idx = normalized.lastIndexOf('/');
+  const dirPath = idx <= 0 ? '/' : normalized.slice(0, idx);
+  return uri.with({ path: dirPath });
 }
 
 function getNonce(): string {
