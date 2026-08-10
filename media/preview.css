@@ -3,22 +3,25 @@
    Defaults here mirror the extension defaults.
 */
 
+/* Palette aligned with Cursor Dark High Contrast */
 :root {
-  --md-bg: #0d1117;
-  --md-fg: #c9d1d9;
-  --md-accent: #58a6ff;
+  --md-bg: #0a0a0a;
+  --md-fg: #f0f0f0;
+  --md-accent: #88c0d0;
   --md-font: 'Segoe UI', system-ui, sans-serif;
   --md-font-size: 16px;
-  --md-code-bg: #161b22;
-  --md-code-fg: #e6edf3;
-  --md-border: #1a3a6b;
-  --md-heading: #e6edf3;
-  --md-muted: #8b949e;
-  --md-quote-border: #1e4db7;
-  --md-toolbar-bg: #161b22;
-  --md-toolbar-border: #1a3a6b;
-  --md-btn-hover: #1f2937;
-  --md-row-alt: rgba(22, 27, 34, 0.6);
+  --md-code-bg: #1a1a1a;
+  --md-code-fg: #f0f0f0;
+  --md-border: #2a2a2a;
+  --md-heading: #f0f0f0;
+  --md-muted: #989898;
+  --md-quote-border: #88c0d0;
+  --md-toolbar-bg: #0a0a0a;
+  --md-toolbar-border: #2a2a2a;
+  --md-btn-hover: #2a2a2a;
+  --md-th-bg: #1a1a1a;
+  --md-row-alt: rgba(42, 42, 42, 0.45);
+  --md-blockquote-bg: rgba(26, 26, 26, 0.8);
 }
 
 *, *::before, *::after {
@@ -188,7 +191,7 @@ html, body {
   margin: 1em 0;
   padding: 0.5em 1.2em;
   color: var(--md-muted);
-  background: rgba(22, 27, 34, 0.4);
+  background: var(--md-blockquote-bg);
   border-radius: 0 6px 6px 0;
 }
 
@@ -215,7 +218,7 @@ html, body {
 }
 
 #preview-content th {
-  background: #0e2a5c !important;
+  background: var(--md-th-bg) !important;
   color: var(--md-heading);
   font-weight: 600;
   font-size: 0.9em;
@@ -228,7 +231,7 @@ html, body {
 }
 
 #preview-content tr:hover td {
-  background: rgba(88, 166, 255, 0.05);
+  background: rgba(136, 192, 208, 0.08);
 }
 
 /* ── Lists ──────────────────────────────────────────────────── */
@@ -301,23 +304,23 @@ html, body {
   background: var(--md-muted);
 }
 
-/* ── Syntax highlighting (basic token colors via highlight.js if present) ── */
+/* ── Syntax highlighting (Cursor Dark HC token colors) ── */
 .hljs-keyword,
 .hljs-selector-tag,
-.hljs-built_in { color: #ff7b72; }
+.hljs-built_in { color: #83d6c5; }
 .hljs-string,
-.hljs-attr { color: #a5d6ff; }
+.hljs-attr { color: #e394dc; }
 .hljs-number,
-.hljs-literal { color: #79c0ff; }
-.hljs-comment { color: #8b949e; font-style: italic; }
+.hljs-literal { color: #ebc88d; }
+.hljs-comment { color: #6e6e6e; font-style: italic; }
 .hljs-function,
-.hljs-name { color: #d2a8ff; }
-.hljs-variable { color: #ffa657; }
-.hljs-type { color: #f0883e; }
-.hljs-title { color: #d2a8ff; }
-.hljs-class { color: #ffa657; }
-.hljs-meta { color: #79c0ff; }
-.hljs-tag { color: #7ee787; }
+.hljs-name { color: #efb080; }
+.hljs-variable { color: #94c1fa; }
+.hljs-type { color: #efb080; }
+.hljs-title { color: #aaa0fa; }
+.hljs-class { color: #87c3ff; }
+.hljs-meta { color: #88c0d0; }
+.hljs-tag { color: #87c3ff; }
 
 /* ── Print styles ───────────────────────────────────────────── */
 @media print {

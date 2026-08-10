@@ -28,26 +28,26 @@ export interface ExportTheme {
   errorColor: string;
 }
 
-/** Fully dark black preview look (GitHub dark + blue accents). */
+/** Near-black look matching Cursor Dark High Contrast. */
 const DARK_THEME: Omit<ExportTheme, 'fontFamily' | 'fontSize'> = {
   mode: 'dark',
-  background: '#0d1117',
-  foreground: '#c9d1d9',
-  accent: '#58a6ff',
-  codeBg: '#161b22',
-  codeFg: '#e6edf3',
-  border: '#1a3a6b',
-  heading: '#e6edf3',
-  muted: '#8b949e',
-  quoteBorder: '#1e4db7',
-  thBg: '#0e2a5c',
-  rowAlt: 'rgba(22, 27, 34, 0.6)',
-  blockquoteBg: 'rgba(22, 27, 34, 0.4)',
+  background: '#0a0a0a',
+  foreground: '#f0f0f0',
+  accent: '#88c0d0',
+  codeBg: '#1a1a1a',
+  codeFg: '#f0f0f0',
+  border: '#2a2a2a',
+  heading: '#f0f0f0',
+  muted: '#989898',
+  quoteBorder: '#88c0d0',
+  thBg: '#1a1a1a',
+  rowAlt: 'rgba(42, 42, 42, 0.45)',
+  blockquoteBg: 'rgba(26, 26, 26, 0.8)',
   mermaidTheme: 'dark',
-  mermaidPrimary: '#1f2937',
-  mermaidSecondary: '#161b22',
-  mermaidBorder: '#3d444d',
-  errorColor: '#ff7b72'
+  mermaidPrimary: '#1a1a1a',
+  mermaidSecondary: '#1a1a1a',
+  mermaidBorder: '#2a2a2a',
+  errorColor: '#bf616a'
 };
 
 const LIGHT_THEME: Omit<ExportTheme, 'fontFamily' | 'fontSize'> = {
@@ -121,7 +121,7 @@ export class PdfExporter {
       [
         {
           label: 'Dark',
-          description: 'Fully dark black (#0d1117) with blue accents',
+          description: 'Near-black (#0a0a0a) matching Cursor Dark High Contrast',
           mode: 'dark' as ExportMode
         },
         {

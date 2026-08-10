@@ -35,7 +35,7 @@
     vscode.postMessage({ type: 'copyHtml', html: previewEl.innerHTML });
   });
 
-  // ── Apply theme variables ─────────────────────────────────────
+  // ── Apply theme variables (Cursor Dark High Contrast defaults) ─
   function applyTheme(theme) {
     if (!theme) return;
     const root = document.documentElement;
@@ -44,20 +44,27 @@
     root.style.setProperty('--md-accent', theme.accent);
     root.style.setProperty('--md-font', theme.fontFamily);
     root.style.setProperty('--md-font-size', theme.fontSize + 'px');
-    // Blue accent elements — set explicitly so webview base styles can't override
-    root.style.setProperty('--md-border', '#1a3a6b');
-    root.style.setProperty('--md-quote-border', '#1e4db7');
-    root.style.setProperty('--md-toolbar-border', '#1a3a6b');
-    root.style.setProperty('--md-code-bg', '#161b22');
+    root.style.setProperty('--md-heading', theme.foreground);
+    root.style.setProperty('--md-code-fg', theme.foreground);
+    root.style.setProperty('--md-border', '#2a2a2a');
+    root.style.setProperty('--md-quote-border', theme.accent || '#88c0d0');
+    root.style.setProperty('--md-toolbar-bg', theme.background);
+    root.style.setProperty('--md-toolbar-border', '#2a2a2a');
+    root.style.setProperty('--md-code-bg', '#1a1a1a');
+    root.style.setProperty('--md-th-bg', '#1a1a1a');
+    root.style.setProperty('--md-btn-hover', '#2a2a2a');
+    root.style.setProperty('--md-muted', '#989898');
+    root.style.setProperty('--md-row-alt', 'rgba(42, 42, 42, 0.45)');
+    root.style.setProperty('--md-blockquote-bg', 'rgba(26, 26, 26, 0.8)');
     document.body.style.background = theme.background;
     currentTheme = theme;
   }
 
   // ── Mermaid initialisation ────────────────────────────────────
   function initMermaid(theme) {
-    const bg = (theme && theme.background) || '#0d1117';
-    const fg = (theme && theme.foreground) || '#c9d1d9';
-    const accent = (theme && theme.accent) || '#58a6ff';
+    const bg = (theme && theme.background) || '#0a0a0a';
+    const fg = (theme && theme.foreground) || '#f0f0f0';
+    const accent = (theme && theme.accent) || '#88c0d0';
 
     mermaid.initialize({
       startOnLoad: false,
@@ -65,17 +72,17 @@
       securityLevel: 'loose',
       themeVariables: {
         background: bg,
-        mainBkg: '#1f2937',
-        primaryColor: '#1f2937',
+        mainBkg: '#1a1a1a',
+        primaryColor: '#1a1a1a',
         primaryTextColor: fg,
-        primaryBorderColor: '#3d444d',
+        primaryBorderColor: '#2a2a2a',
         lineColor: accent,
-        secondaryColor: '#161b22',
+        secondaryColor: '#1a1a1a',
         tertiaryColor: bg,
-        edgeLabelBackground: '#161b22',
-        clusterBkg: '#161b22',
+        edgeLabelBackground: '#1a1a1a',
+        clusterBkg: '#1a1a1a',
         titleColor: fg,
-        nodeBorder: '#3d444d',
+        nodeBorder: '#2a2a2a',
         nodeTextColor: fg,
         fontFamily: (theme && theme.fontFamily) || "'Segoe UI', system-ui, sans-serif"
       }
@@ -123,8 +130,7 @@
 
     previewEl.innerHTML = html;
 
-    // Force blue styling directly on elements — bypasses any webview base style overrides
-    applyBlueAccents();
+    applyChromeAccents();
 
     // Render mermaid diagrams
     if (mermaidBlocks.length > 0) {
@@ -148,17 +154,17 @@
         el.innerHTML = svg;
         el.removeAttribute('data-diagram');
       } catch (err) {
-        el.innerHTML = `<pre style="color:#ff7b72;padding:1em">Mermaid error: ${escapeHtml(err.message)}</pre>`;
+        el.innerHTML = `<pre style="color:#bf616a;padding:1em">Mermaid error: ${escapeHtml(err.message)}</pre>`;
       }
     }
   }
 
-  // ── Force blue accents directly onto rendered elements ────────
-  function applyBlueAccents() {
-    const BORDER = '1px solid #1a3a6b';
-    const TH_BG  = '#0e2a5c';
+  // ── Force chrome accents onto rendered elements (HC borders) ──
+  function applyChromeAccents() {
+    const BORDER = '1px solid #2a2a2a';
+    const TH_BG = '#1a1a1a';
+    const accent = (currentTheme && currentTheme.accent) || '#88c0d0';
 
-    // Table: outer border + all cell borders
     previewEl.querySelectorAll('table').forEach(el => {
       el.style.border = BORDER;
       el.style.borderCollapse = 'collapse';
@@ -166,22 +172,18 @@
     previewEl.querySelectorAll('th, td').forEach(el => {
       el.style.border = BORDER;
     });
-    // Table headers: blue background
     previewEl.querySelectorAll('th').forEach(el => {
       el.style.background = TH_BG;
     });
-    // HR dividers
     previewEl.querySelectorAll('hr').forEach(el => {
       el.style.border = 'none';
-      el.style.borderTop = '1px solid #1a3a6b';
+      el.style.borderTop = '1px solid #2a2a2a';
     });
-    // H1/H2 underline
     previewEl.querySelectorAll('h1, h2').forEach(el => {
-      el.style.borderBottom = '1px solid #1a3a6b';
+      el.style.borderBottom = '1px solid #2a2a2a';
     });
-    // Blockquote left bar
     previewEl.querySelectorAll('blockquote').forEach(el => {
-      el.style.borderLeft = '4px solid #1e4db7';
+      el.style.borderLeft = '4px solid ' + accent;
     });
   }
 
@@ -269,7 +271,7 @@
     html += `<p style="color:#8b949e;font-size:0.85em;margin-top:1em">${body.length} row${body.length !== 1 ? 's' : ''} × ${headers.length} column${headers.length !== 1 ? 's' : ''}</p>`;
 
     previewEl.innerHTML = html;
-    applyBlueAccents();
+    applyChromeAccents();
   }
 
   // ── Message handler from extension host ──────────────────────

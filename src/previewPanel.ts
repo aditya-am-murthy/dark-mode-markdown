@@ -133,9 +133,9 @@ export class PreviewPanel {
     const markdown = this.document.getText();
     const config = vscode.workspace.getConfiguration('darkMarkdown');
     const theme = {
-      background: config.get<string>('theme.background', '#0d1117'),
-      foreground: config.get<string>('theme.foreground', '#c9d1d9'),
-      accent: config.get<string>('theme.accent', '#58a6ff'),
+      background: config.get<string>('theme.background', '#0a0a0a'),
+      foreground: config.get<string>('theme.foreground', '#f0f0f0'),
+      accent: config.get<string>('theme.accent', '#88c0d0'),
       fontFamily: config.get<string>('theme.fontFamily', "'Segoe UI', system-ui, sans-serif"),
       fontSize: config.get<number>('theme.fontSize', 16)
     };
