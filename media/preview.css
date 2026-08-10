@@ -270,20 +270,19 @@ html, body {
   border: 1px solid var(--md-border);
 }
 
-/* ── Mermaid diagrams ───────────────────────────────────────── */
-#preview-content .mermaid {
-  text-align: center;
-  margin: 1.5em 0;
-  background: var(--md-code-bg);
-  border: 1px solid var(--md-border);
-  border-radius: 8px;
-  padding: 1em;
-  overflow-x: auto;
+#preview-content img,
+#preview-content svg,
+#preview-content .mermaid,
+#preview-content .mermaid svg,
+#preview-content table {
+  max-width: 100%;
+  height: auto;
 }
 
 #preview-content .mermaid svg {
-  max-width: 100%;
+  width: 100%;
 }
+
 
 /* ── Scrollbar styling ──────────────────────────────────────── */
 ::-webkit-scrollbar {

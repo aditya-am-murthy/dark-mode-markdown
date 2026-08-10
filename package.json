@@ -7,7 +7,7 @@
   "name": "dark-mode-markdown",
   "displayName": "Dark Mode Markdown Preview",
   "description": "Live markdown preview with dark theme, Mermaid diagrams, and PDF export",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -36,6 +36,11 @@
     ],
     "commands": [
       {
+        "command": "darkMarkdown.togglePreview",
+        "title": "Dark Markdown: Toggle Preview",
+        "icon": "$(open-preview)"
+      },
+      {
         "command": "darkMarkdown.openPreview",
         "title": "Dark Markdown: Open Preview",
         "icon": "$(preview)"
@@ -46,6 +51,11 @@
         "icon": "$(split-horizontal)"
       },
       {
+        "command": "darkMarkdown.closePreview",
+        "title": "Dark Markdown: Close Preview",
+        "icon": "$(close)"
+      },
+      {
         "command": "darkMarkdown.exportPdf",
         "title": "Dark Markdown: Export to PDF",
         "icon": "$(export)"
@@ -54,14 +64,29 @@
     "menus": {
       "editor/title": [
         {
-          "command": "darkMarkdown.openPreview",
-          "when": "editorLangId == markdown || editorLangId == csv",
-          "group": "navigation"
+          "command": "darkMarkdown.togglePreview",
+          "when": "editorLangId == markdown && !darkMarkdown.previewOpen",
+          "group": "navigation@1"
+        },
+        {
+          "command": "darkMarkdown.togglePreview",
+          "when": "editorLangId == csv && !darkMarkdown.previewOpen",
+          "group": "navigation@1"
+        },
+        {
+          "command": "darkMarkdown.closePreview",
+          "when": "(editorLangId == markdown || editorLangId == csv) && darkMarkdown.previewOpen",
+          "group": "navigation@1"
         },
         {
           "command": "darkMarkdown.openSideBySide",
           "when": "editorLangId == markdown || editorLangId == csv",
-          "group": "navigation"
+          "group": "navigation@2"
+        },
+        {
+          "command": "darkMarkdown.exportPdf",
+          "when": "editorLangId == markdown || editorLangId == csv",
+          "group": "navigation@3"
         }
       ]
     },
@@ -95,8 +120,13 @@
         },
         "darkMarkdown.sideBySideByDefault": {
           "type": "boolean",
+          "default": true,
+          "description": "When opening preview, place editor left and preview right"
+        },
+        "darkMarkdown.autoOpenPreview": {
+          "type": "boolean",
           "default": false,
-          "description": "Open preview in side-by-side mode by default"
+          "description": "Automatically open preview when activating a Markdown/CSV editor"
         },
         "darkMarkdown.autoRefresh": {
           "type": "boolean",
@@ -111,7 +141,7 @@
             "light"
           ],
           "default": "ask",
-          "description": "PDF export color mode. 'ask' prompts each time; 'dark' uses near-black Cursor Dark HC colors; 'light' uses a white print-friendly theme."
+          "description": "PDF export color mode. 'ask' prompts each time; 'dark' / 'light' skip the prompt."
         }
       }
     }
