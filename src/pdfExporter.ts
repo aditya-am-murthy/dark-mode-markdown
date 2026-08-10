@@ -69,10 +69,15 @@ const LIGHT_THEME: Omit<ExportTheme, 'fontFamily' | 'fontSize'> = {
   errorColor: '#cf222e'
 };
 
+type WebviewMsg =
+  | { type: 'pdfReady'; base64: string }
+  | { type: 'pdfError'; message: string }
+  | { type: 'status'; message: string };
+
 export class PdfExporter {
   /**
-   * Always writes a .pdf next to the source document (works on Remote SSH).
-   * Also opens a styled preview panel; print is optional (often blocked in webviews).
+   * Render markdown/CSV to styled HTML (images + Mermaid), rasterize to PDF
+   * in the webview, then write <basename>.pdf beside the source document.
    */
   static async export(
     _webview: vscode.Webview,
@@ -88,73 +93,67 @@ export class PdfExporter {
     const content = document.getText();
     const isCsv =
       document.languageId === 'csv' || document.fileName.toLowerCase().endsWith('.csv');
-    const baseName = path.basename(document.fileName).replace(/\.[^.]+$/, '') || 'export';
-
-    // Primary path: always save PDF beside the document (or via Save dialog).
-    let savedPath: string;
-    try {
-      savedPath = await PdfExporter.savePdfBesideDocument(document, content);
-    } catch (saveErr) {
-      const detail = saveErr instanceof Error ? saveErr.message : String(saveErr);
-      vscode.window.showErrorMessage(`Could not save PDF: ${detail}`);
-      return;
-    }
-
-    // Secondary: show styled preview (print may not work inside Cursor webviews).
-    try {
-      const config = vscode.workspace.getConfiguration('darkMarkdown');
-      const theme = PdfExporter.resolveTheme(selectedMode, config);
-
-      const panel = vscode.window.createWebviewPanel(
-        'darkMarkdownExport',
-        `Export (${selectedMode}): ${baseName}`,
-        vscode.ViewColumn.Beside,
-        {
-          enableScripts: true,
-          retainContextWhenHidden: true,
-          localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
-        }
-      );
-
-      const nonce = getNonce();
-      panel.webview.html = PdfExporter.buildHtml(
-        content,
-        theme,
-        baseName,
-        isCsv,
-        panel.webview,
-        nonce,
-        savedPath
-      );
-
-      panel.webview.onDidReceiveMessage(async (msg: { type?: string }) => {
-        if (msg?.type === 'savePdfAgain') {
-          try {
-            const again = await PdfExporter.savePdfBesideDocument(document, content);
-            vscode.window.showInformationMessage(`Saved PDF: ${again}`);
-          } catch (err) {
-            const detail = err instanceof Error ? err.message : String(err);
-            vscode.window.showErrorMessage(`Could not save PDF: ${detail}`);
-          }
-        }
-      });
-    } catch (err) {
-      // PDF already saved — preview is optional.
-      const detail = err instanceof Error ? err.message : String(err);
-      vscode.window.showWarningMessage(
-        `PDF saved to ${savedPath}, but preview panel failed: ${detail}`
-      );
-    }
-  }
-
-  /** Write a PDF next to the source document (same basename, .pdf). */
-  static async savePdfBesideDocument(
-    document: vscode.TextDocument,
-    content: string
-  ): Promise<string> {
     const baseName =
       path.basename(document.fileName).replace(/\.[^.]+$/, '') || 'export';
 
+    const config = vscode.workspace.getConfiguration('darkMarkdown');
+    const theme = PdfExporter.resolveTheme(selectedMode, config);
+
+    const panel = vscode.window.createWebviewPanel(
+      'darkMarkdownExport',
+      `Export PDF (${selectedMode}): ${baseName}`,
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
+      }
+    );
+
+    let settled = false;
+    const finish = async (msg: WebviewMsg): Promise<void> => {
+      if (msg.type === 'status') {
+        return;
+      }
+      if (settled) {
+        return;
+      }
+      settled = true;
+
+      if (msg.type === 'pdfError') {
+        vscode.window.showErrorMessage(`PDF export failed: ${msg.message}`);
+        return;
+      }
+
+      try {
+        const saved = await PdfExporter.writePdfBytes(document, baseName, msg.base64);
+        vscode.window.showInformationMessage(`Saved rendered PDF: ${saved}`);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`Could not write PDF: ${detail}`);
+      }
+    };
+
+    panel.webview.onDidReceiveMessage((msg: WebviewMsg) => {
+      void finish(msg);
+    });
+
+    const nonce = getNonce();
+    panel.webview.html = PdfExporter.buildHtml(
+      content,
+      theme,
+      baseName,
+      isCsv,
+      panel.webview,
+      nonce
+    );
+  }
+
+  static async writePdfBytes(
+    document: vscode.TextDocument,
+    baseName: string,
+    base64: string
+  ): Promise<string> {
     let pdfUri: vscode.Uri;
     if (document.uri.scheme === 'untitled') {
       const picked = await vscode.window.showSaveDialog({
@@ -167,16 +166,12 @@ export class PdfExporter {
       }
       pdfUri = picked;
     } else {
-      const dir = dirnameUri(document.uri);
-      pdfUri = vscode.Uri.joinPath(dir, `${baseName}.pdf`);
+      pdfUri = vscode.Uri.joinPath(dirnameUri(document.uri), `${baseName}.pdf`);
     }
 
-    const bytes = buildSimplePdf(content);
+    const bytes = Buffer.from(base64, 'base64');
     await vscode.workspace.fs.writeFile(pdfUri, bytes);
-
-    const label = pdfUri.scheme === 'file' ? pdfUri.fsPath : pdfUri.toString(true);
-    vscode.window.showInformationMessage(`Saved PDF: ${label}`);
-    return label;
+    return pdfUri.scheme === 'file' ? pdfUri.fsPath : pdfUri.toString(true);
   }
 
   static async pickMode(): Promise<ExportMode | undefined> {
@@ -219,7 +214,6 @@ export class PdfExporter {
     );
     const fontSize = config.get<number>('theme.fontSize', 16);
 
-    // For dark mode, honor custom colors when they look like overrides of the dark defaults.
     if (mode === 'dark') {
       return {
         ...base,
@@ -240,23 +234,21 @@ export class PdfExporter {
     title: string,
     isCsv: boolean,
     webview: vscode.Webview,
-    nonce: string,
-    savedPath: string
+    nonce: string
   ): string {
     const escapedContent = content
       .replace(/\\/g, '\\\\')
       .replace(/`/g, '\\`')
       .replace(/\$/g, '\\$');
-    const escapedSavedPath = escapeHtml(savedPath);
 
     const t = theme;
     const csp = [
       `default-src 'none'`,
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `script-src 'nonce-${nonce}' https://cdn.jsdelivr.net`,
-      `img-src ${webview.cspSource} https: data:`,
+      `img-src ${webview.cspSource} https: http: data: blob:`,
       `font-src ${webview.cspSource} https: data:`,
-      `connect-src https://cdn.jsdelivr.net`
+      `connect-src https://cdn.jsdelivr.net https: data: blob:`
     ].join('; ');
 
     return `<!DOCTYPE html>
@@ -274,14 +266,6 @@ export class PdfExporter {
       font-family: ${t.fontFamily};
       font-size: ${t.fontSize}px;
       line-height: 1.7;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-      color-adjust: exact;
-    }
-    body {
-      padding: 48px;
-      max-width: 860px;
-      margin: 0 auto;
     }
     #export-bar {
       position: sticky;
@@ -290,7 +274,6 @@ export class PdfExporter {
       display: flex;
       gap: 8px;
       align-items: center;
-      margin: -48px -48px 24px;
       padding: 10px 16px;
       background: ${t.codeBg};
       border-bottom: 1px solid ${t.border};
@@ -311,21 +294,36 @@ export class PdfExporter {
       color: ${t.mode === 'light' ? '#ffffff' : '#0a0a0a'};
       font-weight: 600;
     }
-    #export-bar .hint {
-      color: ${t.muted};
-      font-size: 12px;
+    #export-bar .hint { color: ${t.muted}; font-size: 12px; }
+    #capture {
+      width: 800px;
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 32px 24px 48px;
+      background: ${t.background};
+      color: ${t.foreground};
     }
-    @media print {
-      #export-bar, #status { display: none !important; }
-      html, body {
-        background: ${t.background} !important;
-        color: ${t.foreground} !important;
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-        color-adjust: exact !important;
-      }
-      body { padding: 0; max-width: 100%; }
-      @page { margin: 16mm; }
+    #capture img,
+    #capture video,
+    #capture canvas,
+    #capture .mermaid,
+    #capture .mermaid svg,
+    #capture table {
+      max-width: 100% !important;
+      height: auto !important;
+    }
+    #capture .mermaid {
+      text-align: center;
+      margin: 1.5em 0;
+      background: ${t.codeBg};
+      border: 1px solid ${t.border};
+      border-radius: 8px;
+      padding: 1em;
+      overflow: visible;
+    }
+    #capture .mermaid svg {
+      width: 100% !important;
+      max-width: 100% !important;
     }
     h1, h2, h3, h4, h5, h6 {
       color: ${t.heading};
@@ -338,12 +336,10 @@ export class PdfExporter {
     h2 { font-size: 1.5em; border-bottom: 1px solid ${t.border}; padding-bottom: 0.3em; }
     h3 { font-size: 1.25em; }
     h4 { font-size: 1.05em; }
-    h5 { font-size: 0.95em; color: ${t.muted}; }
-    h6 { font-size: 0.875em; color: ${t.muted}; }
+    h5, h6 { font-size: 0.95em; color: ${t.muted}; }
     p { margin: 0.75em 0; }
     strong { color: ${t.heading}; font-weight: 600; }
     a { color: ${t.accent}; text-decoration: none; }
-    a:hover { text-decoration: underline; }
     code {
       font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
       font-size: 0.875em;
@@ -361,13 +357,7 @@ export class PdfExporter {
       overflow-x: auto;
       margin: 1em 0;
     }
-    pre code {
-      background: none;
-      border: none;
-      padding: 0;
-      font-size: 0.9em;
-      color: ${t.codeFg};
-    }
+    pre code { background: none; border: none; padding: 0; font-size: 0.9em; color: ${t.codeFg}; }
     blockquote {
       border-left: 4px solid ${t.quoteBorder};
       margin: 1em 0;
@@ -382,14 +372,8 @@ export class PdfExporter {
       margin: 1em 0;
       font-size: 0.95em;
       border: 1px solid ${t.border};
-      border-radius: 6px;
-      overflow: hidden;
     }
-    th, td {
-      border: 1px solid ${t.border};
-      padding: 0.6em 1em;
-      text-align: left;
-    }
+    th, td { border: 1px solid ${t.border}; padding: 0.6em 1em; text-align: left; }
     th {
       background: ${t.thBg};
       color: ${t.heading};
@@ -399,20 +383,9 @@ export class PdfExporter {
       text-transform: uppercase;
     }
     tr:nth-child(even) td { background: ${t.rowAlt}; }
-    img { max-width: 100%; border-radius: 6px; border: 1px solid ${t.border}; }
     hr { border: none; border-top: 1px solid ${t.border}; margin: 2em 0; }
     ul, ol { margin: 0.75em 0 0.75em 1.5em; }
     li { margin: 0.3em 0; }
-    .mermaid {
-      text-align: center;
-      margin: 1.5em 0;
-      background: ${t.codeBg};
-      border: 1px solid ${t.border};
-      border-radius: 8px;
-      padding: 1em;
-      overflow-x: auto;
-    }
-    .mermaid svg { max-width: 100%; }
     .csv-meta { color: ${t.muted}; font-size: 0.85em; margin-top: 1em; }
     #status {
       position: fixed;
@@ -430,30 +403,28 @@ export class PdfExporter {
 </head>
 <body>
   <div id="export-bar">
-    <button class="primary" id="btn-save" type="button">Save PDF again</button>
-    <button id="btn-print" type="button">Try print dialog</button>
-    <span class="hint">PDF saved to: ${escapedSavedPath}</span>
+    <button class="primary" id="btn-save" type="button">Generate PDF</button>
+    <span class="hint">Captures the rendered HTML (images + diagrams) and saves beside the document.</span>
   </div>
-  <div id="status">PDF saved beside the document.</div>
-  <div id="preview-content"></div>
+  <div id="status">Rendering…</div>
+  <div id="capture"></div>
   <script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+  <script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
   <script nonce="${nonce}">
     (function() {
       const vscodeApi = acquireVsCodeApi();
       const content = \`${escapedContent}\`;
       const isCsv = ${isCsv ? 'true' : 'false'};
       const statusEl = document.getElementById('status');
-      const previewEl = document.getElementById('preview-content');
-      const btnPrint = document.getElementById('btn-print');
+      const captureEl = document.getElementById('capture');
       const btnSave = document.getElementById('btn-save');
+      let busy = false;
 
-      btnSave.addEventListener('click', function() {
-        vscodeApi.postMessage({ type: 'savePdfAgain' });
-      });
-      btnPrint.addEventListener('click', function() {
-        try { window.print(); } catch (e) { /* webviews often block print */ }
-      });
+      function setStatus(message) {
+        statusEl.textContent = message;
+        vscodeApi.postMessage({ type: 'status', message: message });
+      }
 
       function escapeHtml(str) {
         return String(str)
@@ -461,6 +432,36 @@ export class PdfExporter {
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;');
+      }
+
+      function fitMedia() {
+        captureEl.querySelectorAll('img, svg, canvas, video, table, .mermaid').forEach(function(el) {
+          el.style.maxWidth = '100%';
+          el.style.height = 'auto';
+          el.style.boxSizing = 'border-box';
+        });
+        captureEl.querySelectorAll('.mermaid svg').forEach(function(svg) {
+          svg.setAttribute('width', '100%');
+          svg.removeAttribute('height');
+          svg.style.width = '100%';
+          svg.style.maxWidth = '100%';
+          svg.style.height = 'auto';
+        });
+      }
+
+      function waitForImages() {
+        const images = Array.prototype.slice.call(captureEl.querySelectorAll('img'));
+        if (images.length === 0) {
+          return Promise.resolve();
+        }
+        return Promise.all(images.map(function(img) {
+          if (img.complete) {
+            return Promise.resolve();
+          }
+          return new Promise(function(resolve) {
+            img.onload = img.onerror = function() { resolve(); };
+          });
+        }));
       }
 
       function parseCsv(text) {
@@ -490,17 +491,17 @@ export class PdfExporter {
       function renderCsv(text) {
         const rows = parseCsv(text);
         if (rows.length === 0) {
-          previewEl.innerHTML = '<p style="color:${t.muted}">Empty CSV</p>';
+          captureEl.innerHTML = '<p style="color:${t.muted}">Empty CSV</p>';
           return;
         }
         const headers = rows[0];
         const body = rows.slice(1);
         let html = '<div style="overflow-x:auto"><table><thead><tr>';
-        headers.forEach(h => { html += '<th>' + escapeHtml(h.trim()) + '</th>'; });
+        headers.forEach(function(h) { html += '<th>' + escapeHtml(h.trim()) + '</th>'; });
         html += '</tr></thead><tbody>';
-        body.forEach(row => {
+        body.forEach(function(row) {
           html += '<tr>';
-          headers.forEach((_, i) => {
+          headers.forEach(function(_, i) {
             html += '<td>' + escapeHtml((row[i] || '').trim()) + '</td>';
           });
           html += '</tr>';
@@ -508,7 +509,7 @@ export class PdfExporter {
         html += '</tbody></table></div>';
         html += '<p class="csv-meta">' + body.length + ' row' + (body.length !== 1 ? 's' : '') +
           ' × ' + headers.length + ' column' + (headers.length !== 1 ? 's' : '') + '</p>';
-        previewEl.innerHTML = html;
+        captureEl.innerHTML = html;
       }
 
       async function renderMarkdown(markdown) {
@@ -547,7 +548,6 @@ export class PdfExporter {
         });
 
         let html = marked.parse(processed);
-
         mermaidBlocks.forEach(function(block, i) {
           const encoded = btoa(unescape(encodeURIComponent(block.diagram)));
           const div = '<div class="mermaid" id="mermaid-' + i + '" data-diagram="' + encoded + '"></div>';
@@ -561,10 +561,10 @@ export class PdfExporter {
           );
         });
 
-        previewEl.innerHTML = html;
+        captureEl.innerHTML = html;
 
         if (mermaidBlocks.length > 0 && typeof mermaid !== 'undefined') {
-          const diagrams = previewEl.querySelectorAll('.mermaid[data-diagram]');
+          const diagrams = captureEl.querySelectorAll('.mermaid[data-diagram]');
           let counter = 0;
           for (const el of diagrams) {
             try {
@@ -582,22 +582,76 @@ export class PdfExporter {
         }
       }
 
+      async function generatePdf() {
+        if (busy) return;
+        busy = true;
+        btnSave.disabled = true;
+        try {
+          if (typeof html2pdf === 'undefined') {
+            throw new Error('html2pdf failed to load (CDN blocked?)');
+          }
+          setStatus('Waiting for images…');
+          await waitForImages();
+          fitMedia();
+          // Let layout settle after SVG sizing
+          await new Promise(function(r) { setTimeout(r, 200); });
+
+          setStatus('Generating PDF from rendered HTML…');
+          const opt = {
+            margin: [10, 10, 10, 10],
+            filename: ${JSON.stringify(title + '.pdf')},
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: {
+              scale: 2,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: '${t.background}',
+              windowWidth: 800
+            },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            pagebreak: { mode: ['css', 'legacy'] }
+          };
+
+          const worker = html2pdf().set(opt).from(captureEl);
+          const pdf = await worker.toPdf().get('pdf');
+          const dataUri = pdf.output('datauristring');
+          const base64 = dataUri.split(',')[1];
+          if (!base64) {
+            throw new Error('PDF generation returned empty data');
+          }
+          setStatus('Saving PDF beside document…');
+          vscodeApi.postMessage({ type: 'pdfReady', base64: base64 });
+          setStatus('PDF sent for save');
+        } catch (err) {
+          const message = (err && err.message) ? err.message : String(err);
+          setStatus('PDF failed');
+          vscodeApi.postMessage({ type: 'pdfError', message: message });
+        } finally {
+          busy = false;
+          btnSave.disabled = false;
+        }
+      }
+
+      btnSave.addEventListener('click', function() { generatePdf(); });
+
       async function run() {
         try {
+          setStatus('Rendering preview…');
           if (isCsv) {
             renderCsv(content);
           } else if (typeof marked === 'undefined') {
-            previewEl.innerHTML = '<p style="color:${t.errorColor}">Preview renderer unavailable (CDN). PDF was still saved beside the document.</p>';
-            statusEl.textContent = 'PDF saved (preview unavailable)';
-            return;
+            throw new Error('marked failed to load (CDN blocked?)');
           } else {
             await renderMarkdown(content);
           }
-          statusEl.textContent = 'PDF saved beside the document';
+          fitMedia();
+          setStatus('Creating PDF…');
+          await generatePdf();
         } catch (err) {
-          statusEl.textContent = 'PDF saved (preview error)';
-          previewEl.innerHTML = '<p style="color:${t.errorColor}">Preview error: ' +
-            escapeHtml(err.message || String(err)) + ' — PDF was still saved.</p>';
+          const message = (err && err.message) ? err.message : String(err);
+          captureEl.innerHTML = '<p style="color:${t.errorColor}">' + escapeHtml(message) + '</p>';
+          setStatus('Render failed');
+          vscodeApi.postMessage({ type: 'pdfError', message: message });
         }
       }
 
@@ -621,7 +675,6 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Parent directory of a document URI (safe for remote schemes). */
 function dirnameUri(uri: vscode.Uri): vscode.Uri {
   const normalized = uri.path.replace(/\\/g, '/');
   const idx = normalized.lastIndexOf('/');
@@ -636,110 +689,4 @@ function getNonce(): string {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }
   return text;
-}
-
-/** Minimal multi-page text PDF (Helvetica / WinAnsi). */
-function buildSimplePdf(text: string): Uint8Array {
-  const escaped = pdfEscape(toWinAnsi(text));
-  const rawLines = escaped.split(/\r?\n/);
-  const lines: string[] = [];
-  const maxChars = 95;
-  for (const line of rawLines) {
-    if (line.length <= maxChars) {
-      lines.push(line);
-      continue;
-    }
-    for (let i = 0; i < line.length; i += maxChars) {
-      lines.push(line.slice(i, i + maxChars));
-    }
-  }
-  if (lines.length === 0) {
-    lines.push('');
-  }
-
-  const linesPerPage = 60;
-  const pages: string[][] = [];
-  for (let i = 0; i < lines.length; i += linesPerPage) {
-    pages.push(lines.slice(i, i + linesPerPage));
-  }
-
-  const objs: Array<string | null> = [];
-  const push = (body: string): number => {
-    objs.push(body);
-    return objs.length; // 1-based id
-  };
-
-  const font = push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-  const contentObjIds: number[] = [];
-  for (const pageLines of pages) {
-    let stream = 'BT /F1 10 Tf 14 TL 50 782 Td\n';
-    pageLines.forEach((line, idx) => {
-      if (idx === 0) {
-        stream += `(${line}) Tj\n`;
-      } else {
-        stream += `T* (${line}) Tj\n`;
-      }
-    });
-    stream += 'ET';
-    contentObjIds.push(
-      push(`<< /Length ${Buffer.byteLength(stream, 'binary')} >>\nstream\n${stream}\nendstream`)
-    );
-  }
-
-  const pagesId = push(''); // placeholder
-  const pageObjIds: number[] = [];
-  for (const contentId of contentObjIds) {
-    pageObjIds.push(
-      push(
-        `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${font} 0 R >> >> >>`
-      )
-    );
-  }
-  objs[pagesId - 1] =
-    `<< /Type /Pages /Kids [${pageObjIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageObjIds.length} >>`;
-
-  const catalog = push(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
-
-  let pdf = '%PDF-1.4\n';
-  const offsets: number[] = [0];
-  for (let i = 0; i < objs.length; i++) {
-    offsets.push(Buffer.byteLength(pdf, 'binary'));
-    pdf += `${i + 1} 0 obj\n${objs[i]}\nendobj\n`;
-  }
-  const xrefStart = Buffer.byteLength(pdf, 'binary');
-  pdf += `xref\n0 ${objs.length + 1}\n`;
-  pdf += '0000000000 65535 f \n';
-  for (let i = 1; i <= objs.length; i++) {
-    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objs.length + 1} /Root ${catalog} 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
-
-  return new Uint8Array(Buffer.from(pdf, 'binary'));
-}
-
-function toWinAnsi(text: string): string {
-  return Array.from(text)
-    .map((ch) => {
-      const code = ch.charCodeAt(0);
-      if (ch === '\n' || ch === '\r' || ch === '\t') {
-        return ch;
-      }
-      if (code >= 32 && code <= 126) {
-        return ch;
-      }
-      if (ch === '•') return '*';
-      if (ch === '–' || ch === '—') return '-';
-      if (ch === '“' || ch === '”' || ch === '„') return '"';
-      if (ch === '‘' || ch === '’') return "'";
-      if (ch === '…') return '...';
-      if (code > 255) {
-        return '?';
-      }
-      return ch;
-    })
-    .join('');
-}
-
-function pdfEscape(text: string): string {
-  return text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 }
