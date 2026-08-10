@@ -1,7 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
-import * as os from 'os';
 
 export type ExportMode = 'dark' | 'light';
 
@@ -73,14 +71,13 @@ const LIGHT_THEME: Omit<ExportTheme, 'fontFamily' | 'fontSize'> = {
 
 export class PdfExporter {
   /**
-   * Export the given markdown/CSV document for Print → Save as PDF.
-   * Builds a self-contained HTML file, opens it in the browser, and
-   * auto-triggers the print dialog once rendering finishes.
+   * Export via an in-editor webview print dialog.
+   * Works on local and Remote SSH (openExternal file:// fails remotely).
    */
   static async export(
     _webview: vscode.Webview,
     document: vscode.TextDocument,
-    _context: vscode.ExtensionContext,
+    context: vscode.ExtensionContext,
     mode?: ExportMode
   ): Promise<void> {
     const selectedMode = mode ?? (await PdfExporter.pickMode());
@@ -95,18 +92,30 @@ export class PdfExporter {
     const isCsv =
       document.languageId === 'csv' || document.fileName.toLowerCase().endsWith('.csv');
     const baseName = path.basename(document.fileName).replace(/\.[^.]+$/, '');
-    const html = PdfExporter.buildHtml(content, theme, baseName, isCsv);
 
-    const tmpDir = os.tmpdir();
-    const tmpFile = path.join(tmpDir, `dark-md-export-${Date.now()}.html`);
-    fs.writeFileSync(tmpFile, html, 'utf8');
+    const panel = vscode.window.createWebviewPanel(
+      'darkMarkdownExport',
+      `Export PDF (${selectedMode}): ${baseName}`,
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
+      }
+    );
 
-    const uri = vscode.Uri.file(tmpFile);
-    await vscode.env.openExternal(uri);
+    const nonce = getNonce();
+    panel.webview.html = PdfExporter.buildHtml(
+      content,
+      theme,
+      baseName,
+      isCsv,
+      panel.webview,
+      nonce
+    );
 
     vscode.window.showInformationMessage(
-      `Opened ${selectedMode} export in browser. The print dialog should appear — choose Save as PDF.`,
-      'OK'
+      `Export ready (${selectedMode}). Use Print → Save as PDF in the dialog (or the Print button in the export panel).`
     );
   }
 
@@ -169,7 +178,9 @@ export class PdfExporter {
     content: string,
     theme: ExportTheme,
     title: string,
-    isCsv: boolean
+    isCsv: boolean,
+    webview: vscode.Webview,
+    nonce: string
   ): string {
     const escapedContent = content
       .replace(/\\/g, '\\\\')
@@ -177,12 +188,21 @@ export class PdfExporter {
       .replace(/\$/g, '\\$');
 
     const t = theme;
+    const csp = [
+      `default-src 'none'`,
+      `style-src ${webview.cspSource} 'unsafe-inline'`,
+      `script-src 'nonce-${nonce}' https://cdn.jsdelivr.net`,
+      `img-src ${webview.cspSource} https: data:`,
+      `font-src ${webview.cspSource} https: data:`,
+      `connect-src https://cdn.jsdelivr.net`
+    ].join('; ');
 
     return `<!DOCTYPE html>
 <html lang="en" data-export-mode="${t.mode}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="${csp}">
   <title>${escapeHtml(title)}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -201,7 +221,40 @@ export class PdfExporter {
       max-width: 860px;
       margin: 0 auto;
     }
+    #export-bar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: -48px -48px 24px;
+      padding: 10px 16px;
+      background: ${t.codeBg};
+      border-bottom: 1px solid ${t.border};
+    }
+    #export-bar button {
+      padding: 6px 12px;
+      border: 1px solid ${t.border};
+      border-radius: 6px;
+      background: transparent;
+      color: ${t.foreground};
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #export-bar button.primary {
+      background: ${t.accent};
+      border-color: ${t.accent};
+      color: ${t.mode === 'light' ? '#ffffff' : '#0a0a0a'};
+      font-weight: 600;
+    }
+    #export-bar .hint {
+      color: ${t.muted};
+      font-size: 12px;
+    }
     @media print {
+      #export-bar, #status { display: none !important; }
       html, body {
         background: ${t.background} !important;
         color: ${t.foreground} !important;
@@ -301,7 +354,7 @@ export class PdfExporter {
     .csv-meta { color: ${t.muted}; font-size: 0.85em; margin-top: 1em; }
     #status {
       position: fixed;
-      top: 12px;
+      bottom: 12px;
       right: 12px;
       background: ${t.codeBg};
       color: ${t.muted};
@@ -311,20 +364,26 @@ export class PdfExporter {
       font-size: 13px;
       z-index: 10;
     }
-    @media print { #status { display: none !important; } }
   </style>
 </head>
 <body>
+  <div id="export-bar">
+    <button class="primary" id="btn-print" type="button">Print / Save as PDF</button>
+    <span class="hint">Choose “Save as PDF” as the destination in the print dialog.</span>
+  </div>
   <div id="status">Preparing export…</div>
   <div id="preview-content"></div>
-  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
-  <script>
+  <script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+  <script nonce="${nonce}">
     (function() {
       const content = \`${escapedContent}\`;
       const isCsv = ${isCsv ? 'true' : 'false'};
       const statusEl = document.getElementById('status');
       const previewEl = document.getElementById('preview-content');
+      const btnPrint = document.getElementById('btn-print');
+
+      btnPrint.addEventListener('click', function() { window.print(); });
 
       function escapeHtml(str) {
         return String(str)
@@ -458,7 +517,7 @@ export class PdfExporter {
         setTimeout(function() {
           statusEl.style.display = 'none';
           window.print();
-        }, 250);
+        }, 400);
       }
 
       async function run() {
@@ -472,7 +531,7 @@ export class PdfExporter {
           } else {
             await renderMarkdown(content);
           }
-          statusEl.textContent = 'Ready — use Save as PDF in the print dialog';
+          statusEl.textContent = 'Ready — Print → Save as PDF';
           triggerPrint();
         } catch (err) {
           statusEl.textContent = 'Export failed';
@@ -499,4 +558,13 @@ function escapeHtml(str: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function getNonce(): string {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
 }
