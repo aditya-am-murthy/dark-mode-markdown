@@ -72,7 +72,7 @@ const LIGHT_THEME: Omit<ExportTheme, 'fontFamily' | 'fontSize'> = {
 export class PdfExporter {
   /**
    * Export via an in-editor webview print dialog.
-   * Works on local and Remote SSH (openExternal file:// fails remotely).
+   * On any failure, writes a .pdf next to the source file.
    */
   static async export(
     _webview: vscode.Webview,
@@ -85,38 +85,77 @@ export class PdfExporter {
       return;
     }
 
-    const config = vscode.workspace.getConfiguration('darkMarkdown');
-    const theme = PdfExporter.resolveTheme(selectedMode, config);
-
     const content = document.getText();
     const isCsv =
       document.languageId === 'csv' || document.fileName.toLowerCase().endsWith('.csv');
     const baseName = path.basename(document.fileName).replace(/\.[^.]+$/, '');
 
-    const panel = vscode.window.createWebviewPanel(
-      'darkMarkdownExport',
-      `Export PDF (${selectedMode}): ${baseName}`,
-      vscode.ViewColumn.Beside,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
+    try {
+      const config = vscode.workspace.getConfiguration('darkMarkdown');
+      const theme = PdfExporter.resolveTheme(selectedMode, config);
+
+      const panel = vscode.window.createWebviewPanel(
+        'darkMarkdownExport',
+        `Export PDF (${selectedMode}): ${baseName}`,
+        vscode.ViewColumn.Beside,
+        {
+          enableScripts: true,
+          retainContextWhenHidden: true,
+          localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
+        }
+      );
+
+      const nonce = getNonce();
+      panel.webview.html = PdfExporter.buildHtml(
+        content,
+        theme,
+        baseName,
+        isCsv,
+        panel.webview,
+        nonce
+      );
+
+      panel.webview.onDidReceiveMessage(async (msg: { type?: string; message?: string }) => {
+        if (msg?.type === 'exportError') {
+          try {
+            await PdfExporter.saveFallbackPdf(document, content);
+          } catch (saveErr) {
+            const detail = saveErr instanceof Error ? saveErr.message : String(saveErr);
+            vscode.window.showErrorMessage(`Export failed and could not save PDF: ${detail}`);
+          }
+        }
+      });
+
+      vscode.window.showInformationMessage(
+        `Export ready (${selectedMode}). Use Print → Save as PDF (or the Print button). If that fails, a PDF is saved beside the file.`
+      );
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      try {
+        const saved = await PdfExporter.saveFallbackPdf(document, content);
+        vscode.window.showWarningMessage(
+          `Export UI failed (${detail}). Saved PDF instead: ${saved}`
+        );
+      } catch (saveErr) {
+        const saveDetail = saveErr instanceof Error ? saveErr.message : String(saveErr);
+        vscode.window.showErrorMessage(
+          `Export failed (${detail}) and PDF save failed (${saveDetail}).`
+        );
       }
-    );
+    }
+  }
 
-    const nonce = getNonce();
-    panel.webview.html = PdfExporter.buildHtml(
-      content,
-      theme,
-      baseName,
-      isCsv,
-      panel.webview,
-      nonce
-    );
-
-    vscode.window.showInformationMessage(
-      `Export ready (${selectedMode}). Use Print → Save as PDF in the dialog (or the Print button in the export panel).`
-    );
+  /** Write a simple text PDF next to the source document (same basename, .pdf). */
+  static async saveFallbackPdf(
+    document: vscode.TextDocument,
+    content: string
+  ): Promise<string> {
+    const baseName = path.basename(document.fileName).replace(/\.[^.]+$/, '');
+    const pdfUri = vscode.Uri.joinPath(document.uri, '..', `${baseName}.pdf`);
+    const bytes = buildSimplePdf(content);
+    await vscode.workspace.fs.writeFile(pdfUri, bytes);
+    vscode.window.showInformationMessage(`Saved PDF: ${pdfUri.fsPath}`);
+    return pdfUri.fsPath;
   }
 
   static async pickMode(): Promise<ExportMode | undefined> {
@@ -377,6 +416,7 @@ export class PdfExporter {
   <script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
   <script nonce="${nonce}">
     (function() {
+      const vscodeApi = acquireVsCodeApi();
       const content = \`${escapedContent}\`;
       const isCsv = ${isCsv ? 'true' : 'false'};
       const statusEl = document.getElementById('status');
@@ -384,6 +424,13 @@ export class PdfExporter {
       const btnPrint = document.getElementById('btn-print');
 
       btnPrint.addEventListener('click', function() { window.print(); });
+
+      function reportError(err) {
+        const message = (err && err.message) ? err.message : String(err || 'Unknown export error');
+        statusEl.style.display = '';
+        statusEl.textContent = 'Export error — saving PDF beside source file…';
+        vscodeApi.postMessage({ type: 'exportError', message: message });
+      }
 
       function escapeHtml(str) {
         return String(str)
@@ -525,8 +572,9 @@ export class PdfExporter {
           if (isCsv) {
             renderCsv(content);
           } else if (typeof marked === 'undefined') {
-            previewEl.innerHTML = '<p style="color:${t.errorColor}">Failed to load markdown renderer (CDN blocked?). Check your network and try again.</p>';
-            statusEl.textContent = 'Export failed';
+            previewEl.innerHTML = '<p style="color:${t.errorColor}">Failed to load markdown renderer (CDN blocked?). Saving PDF beside the source file…</p>';
+            statusEl.textContent = 'Export failed — saving PDF…';
+            reportError(new Error('Failed to load markdown renderer (CDN blocked?)'));
             return;
           } else {
             await renderMarkdown(content);
@@ -534,9 +582,10 @@ export class PdfExporter {
           statusEl.textContent = 'Ready — Print → Save as PDF';
           triggerPrint();
         } catch (err) {
-          statusEl.textContent = 'Export failed';
+          statusEl.textContent = 'Export failed — saving PDF…';
           previewEl.innerHTML = '<p style="color:${t.errorColor}">Export error: ' +
             escapeHtml(err.message || String(err)) + '</p>';
+          reportError(err);
         }
       }
 
@@ -567,4 +616,110 @@ function getNonce(): string {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }
   return text;
+}
+
+/** Minimal multi-page text PDF (Helvetica / WinAnsi). */
+function buildSimplePdf(text: string): Uint8Array {
+  const escaped = pdfEscape(toWinAnsi(text));
+  const rawLines = escaped.split(/\r?\n/);
+  const lines: string[] = [];
+  const maxChars = 95;
+  for (const line of rawLines) {
+    if (line.length <= maxChars) {
+      lines.push(line);
+      continue;
+    }
+    for (let i = 0; i < line.length; i += maxChars) {
+      lines.push(line.slice(i, i + maxChars));
+    }
+  }
+  if (lines.length === 0) {
+    lines.push('');
+  }
+
+  const linesPerPage = 60;
+  const pages: string[][] = [];
+  for (let i = 0; i < lines.length; i += linesPerPage) {
+    pages.push(lines.slice(i, i + linesPerPage));
+  }
+
+  const objs: Array<string | null> = [];
+  const push = (body: string): number => {
+    objs.push(body);
+    return objs.length; // 1-based id
+  };
+
+  const font = push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const contentObjIds: number[] = [];
+  for (const pageLines of pages) {
+    let stream = 'BT /F1 10 Tf 14 TL 50 782 Td\n';
+    pageLines.forEach((line, idx) => {
+      if (idx === 0) {
+        stream += `(${line}) Tj\n`;
+      } else {
+        stream += `T* (${line}) Tj\n`;
+      }
+    });
+    stream += 'ET';
+    contentObjIds.push(
+      push(`<< /Length ${Buffer.byteLength(stream, 'binary')} >>\nstream\n${stream}\nendstream`)
+    );
+  }
+
+  const pagesId = push(''); // placeholder
+  const pageObjIds: number[] = [];
+  for (const contentId of contentObjIds) {
+    pageObjIds.push(
+      push(
+        `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${font} 0 R >> >> >>`
+      )
+    );
+  }
+  objs[pagesId - 1] =
+    `<< /Type /Pages /Kids [${pageObjIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageObjIds.length} >>`;
+
+  const catalog = push(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [0];
+  for (let i = 0; i < objs.length; i++) {
+    offsets.push(Buffer.byteLength(pdf, 'binary'));
+    pdf += `${i + 1} 0 obj\n${objs[i]}\nendobj\n`;
+  }
+  const xrefStart = Buffer.byteLength(pdf, 'binary');
+  pdf += `xref\n0 ${objs.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (let i = 1; i <= objs.length; i++) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root ${catalog} 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
+
+  return new Uint8Array(Buffer.from(pdf, 'binary'));
+}
+
+function toWinAnsi(text: string): string {
+  return Array.from(text)
+    .map((ch) => {
+      const code = ch.charCodeAt(0);
+      if (ch === '\n' || ch === '\r' || ch === '\t') {
+        return ch;
+      }
+      if (code >= 32 && code <= 126) {
+        return ch;
+      }
+      if (ch === '•') return '*';
+      if (ch === '–' || ch === '—') return '-';
+      if (ch === '“' || ch === '”' || ch === '„') return '"';
+      if (ch === '‘' || ch === '’') return "'";
+      if (ch === '…') return '...';
+      if (code > 255) {
+        return '?';
+      }
+      return ch;
+    })
+    .join('');
+}
+
+function pdfEscape(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 }
