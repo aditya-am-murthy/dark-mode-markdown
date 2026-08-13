@@ -369,8 +369,8 @@
     if (exportBusy) return;
     exportBusy = true;
     try {
-      if (typeof html2pdf === 'undefined') {
-        throw new Error('html2pdf failed to load (CDN / network)');
+      if (typeof html2pdf === 'undefined' && typeof html2canvas === 'undefined') {
+        throw new Error('PDF libraries failed to load (CDN / network)');
       }
 
       applyTheme(theme);
@@ -382,15 +382,15 @@
       await waitForImages(previewEl);
       fitMedia(previewEl);
       await rasterizeSvgs(previewEl);
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForImages(previewEl);
+      await new Promise((r) => setTimeout(r, 300));
 
-      // Fixed-position capture root sized for A4 printable width (avoids left clip)
+      // Offscreen but layout-participating capture host (fixed+x/y often yields blank pages)
+      const host = document.createElement('div');
+      host.style.cssText =
+        'position:absolute;left:0;top:0;width:680px;opacity:1;pointer-events:none;z-index:2147483646;';
       const capture = document.createElement('div');
       capture.className = 'pdf-capture';
-      capture.style.position = 'fixed';
-      capture.style.left = '0';
-      capture.style.top = '0';
-      capture.style.zIndex = '2147483646';
       capture.style.width = '680px';
       capture.style.maxWidth = '680px';
       capture.style.background = theme.background;
@@ -400,32 +400,94 @@
         el.style.maxWidth = '100%';
         el.style.height = 'auto';
       });
-      document.body.appendChild(capture);
+      // Force computed colors inline so html2canvas does not miss CSS variables
+      paintCaptureInline(capture, theme);
+      host.appendChild(capture);
+      document.body.appendChild(host);
 
-      // A4 ≈ 210mm; 14mm side margins → ~182mm content. 680px maps cleanly into that.
-      const opt = {
-        margin: [14, 14, 14, 14],
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
+      const textLen = (capture.innerText || '').trim().length;
+      if (textLen < 20) {
+        throw new Error('Rendered capture is empty (nothing to export)');
+      }
+
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+      const canvasFn = window.html2canvas || (html2pdf && html2pdf().set && null);
+      let canvas;
+      if (typeof html2canvas === 'function') {
+        canvas = await html2canvas(capture, {
           scale: 2,
           useCORS: true,
-          allowTaint: true,
+          allowTaint: false,
           backgroundColor: theme.background,
+          logging: false,
           windowWidth: 680,
-          scrollX: 0,
-          scrollY: 0,
-          x: 0,
-          y: 0
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] }
-      };
+          scrollX: -window.scrollX,
+          scrollY: -window.scrollY
+        });
+      } else {
+        // Fallback through html2pdf worker API
+        const worker = html2pdf()
+          .set({
+            margin: [14, 14, 14, 14],
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: {
+              scale: 2,
+              useCORS: true,
+              allowTaint: false,
+              backgroundColor: theme.background,
+              logging: false,
+              windowWidth: 680
+            },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            pagebreak: { mode: ['css', 'legacy'] }
+          })
+          .from(capture);
+        const pdfObj = await worker.toPdf().get('pdf');
+        const dataUri = pdfObj.output('datauristring');
+        host.remove();
+        const base64 = dataUri.split(',')[1];
+        if (!base64) throw new Error('PDF generation returned empty data');
+        assertPdfNotTiny(base64);
+        postPdfBase64(base64);
+        return;
+      }
 
-      const pdf = await html2pdf().set(opt).from(capture).toPdf().get('pdf');
-      const dataUri = pdf.output('datauristring');
-      capture.remove();
+      if (!canvas || canvas.width < 10 || canvas.height < 10) {
+        throw new Error('html2canvas produced an empty canvas');
+      }
+      if (isMostlyBlankCanvas(canvas)) {
+        throw new Error('html2canvas produced a blank white page');
+      }
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      const jsPDF = window.jspdf && window.jspdf.jsPDF
+        ? window.jspdf.jsPDF
+        : (window.jsPDF || null);
+      if (!jsPDF) {
+        // html2pdf bundle exposes jsPDF via worker; build via html2pdf image path
+        const pdfObj = await html2pdf()
+          .set({
+            margin: [14, 14, 14, 14],
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+          })
+          .from(capture)
+          .toPdf()
+          .get('pdf');
+        // Manually replace with our known-good canvas pages instead
+        host.remove();
+        const dataUri = await canvasToPdfDataUri(canvas, theme.background);
+        const base64 = dataUri.split(',')[1];
+        assertPdfNotTiny(base64);
+        postPdfBase64(base64);
+        return;
+      }
+
+      const dataUri = await canvasToPdfDataUri(canvas, theme.background);
+      host.remove();
       const base64 = dataUri.split(',')[1];
       if (!base64) throw new Error('PDF generation returned empty data');
+      assertPdfNotTiny(base64);
       postPdfBase64(base64);
     } catch (err) {
       vscode.postMessage({
@@ -435,6 +497,118 @@
     } finally {
       exportBusy = false;
     }
+  }
+
+  function paintCaptureInline(root, theme) {
+    root.style.background = theme.background;
+    root.style.color = theme.foreground;
+    root.querySelectorAll('h1,h2,h3,h4,h5,h6,strong').forEach((el) => {
+      el.style.color = theme.heading || theme.foreground;
+    });
+    root.querySelectorAll('p,li,td').forEach((el) => {
+      el.style.color = theme.foreground;
+    });
+    root.querySelectorAll('a').forEach((el) => {
+      el.style.color = theme.accent;
+    });
+  }
+
+  function isMostlyBlankCanvas(canvas) {
+    const ctx = canvas.getContext('2d');
+    const w = Math.min(canvas.width, 200);
+    const h = Math.min(canvas.height, 200);
+    const data = ctx.getImageData(0, 0, w, h).data;
+    let nonWhite = 0;
+    for (let i = 0; i < data.length; i += 16) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const a = data[i + 3];
+      if (a > 10 && (r < 250 || g < 250 || b < 250)) nonWhite++;
+    }
+    return nonWhite < 30;
+  }
+
+  function assertPdfNotTiny(base64) {
+    // ~ empty single-page PDFs are often < 2KB of base64 content beyond header
+    if (!base64 || base64.length < 4000) {
+      throw new Error('Generated PDF is empty/too small');
+    }
+  }
+
+  async function canvasToPdfDataUri(canvas, background) {
+    // Prefer jsPDF from html2pdf bundle
+    let JsPDFCtor = null;
+    if (window.jspdf && window.jspdf.jsPDF) JsPDFCtor = window.jspdf.jsPDF;
+    else if (typeof window.jsPDF === 'function') JsPDFCtor = window.jsPDF;
+
+    if (!JsPDFCtor) {
+      // Last resort: html2pdf from an <img> of the canvas
+      const img = document.createElement('img');
+      img.src = canvas.toDataURL('image/jpeg', 0.98);
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+      const holder = document.createElement('div');
+      holder.style.width = '680px';
+      holder.appendChild(img);
+      document.body.appendChild(holder);
+      const pdfObj = await html2pdf()
+        .set({
+          margin: [14, 14, 14, 14],
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 1, backgroundColor: background },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        })
+        .from(holder)
+        .toPdf()
+        .get('pdf');
+      holder.remove();
+      return pdfObj.output('datauristring');
+    }
+
+    const pdf = new JsPDFCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 14;
+    const usableWidth = pageWidth - margin * 2;
+    const usableHeight = pageHeight - margin * 2;
+
+    const imgWidthPx = canvas.width;
+    const imgHeightPx = canvas.height;
+    const pxPerMm = imgWidthPx / usableWidth;
+    const pageHeightPx = usableHeight * pxPerMm;
+
+    let y = 0;
+    let first = true;
+    while (y < imgHeightPx) {
+      const sliceHeight = Math.min(pageHeightPx, imgHeightPx - y);
+      const pageCanvas = document.createElement('canvas');
+      pageCanvas.width = imgWidthPx;
+      pageCanvas.height = Math.max(1, Math.floor(sliceHeight));
+      const ctx = pageCanvas.getContext('2d');
+      ctx.fillStyle = background || '#ffffff';
+      ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+      ctx.drawImage(
+        canvas,
+        0,
+        y,
+        imgWidthPx,
+        sliceHeight,
+        0,
+        0,
+        imgWidthPx,
+        sliceHeight
+      );
+      const pageData = pageCanvas.toDataURL('image/jpeg', 0.98);
+      if (!first) pdf.addPage();
+      first = false;
+      const drawHeight = sliceHeight / pxPerMm;
+      pdf.addImage(pageData, 'JPEG', margin, margin, usableWidth, drawHeight);
+      y += sliceHeight;
+    }
+    return pdf.output('datauristring');
   }
 
   window.addEventListener('message', (event) => {

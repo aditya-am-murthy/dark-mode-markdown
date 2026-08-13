@@ -136,11 +136,26 @@ export class PreviewPanel {
     context: vscode.ExtensionContext,
     document: vscode.TextDocument
   ): Promise<void> {
-    const panel = PreviewPanel.createOrShow(context, document, true);
     const mode = await PdfExporter.pickMode();
     if (!mode) {
       return;
     }
+
+    // Preferred: Chrome/Chromium print of rendered HTML (avoids blank html2canvas PDFs)
+    try {
+      const viaChrome = await PdfExporter.exportWithChrome(document, mode);
+      if (viaChrome) {
+        vscode.window.showInformationMessage(`Saved rendered PDF: ${viaChrome}`);
+        return;
+      }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      vscode.window.showWarningMessage(
+        `Chrome PDF export failed (${detail}). Falling back to preview capture…`
+      );
+    }
+
+    const panel = PreviewPanel.createOrShow(context, document, true);
     await panel.startRenderedPdfExport(mode);
   }
 
@@ -220,6 +235,18 @@ export class PreviewPanel {
         const mode = await PdfExporter.pickMode();
         if (!mode) {
           break;
+        }
+        try {
+          const viaChrome = await PdfExporter.exportWithChrome(this.document, mode);
+          if (viaChrome) {
+            vscode.window.showInformationMessage(`Saved rendered PDF: ${viaChrome}`);
+            break;
+          }
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          vscode.window.showWarningMessage(
+            `Chrome PDF export failed (${detail}). Falling back to preview capture…`
+          );
         }
         await this.startRenderedPdfExport(mode);
         break;

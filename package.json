@@ -7,7 +7,7 @@
   "name": "dark-mode-markdown",
   "displayName": "Dark Mode Markdown Preview",
   "description": "Live markdown preview with dark theme, Mermaid diagrams, and PDF export",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -149,11 +149,13 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "test:pdf": "node scripts/test-pdf-export.mjs"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.80.0",
+    "puppeteer-core": "^23.11.1",
     "typescript": "^5.0.0"
   }
 }
